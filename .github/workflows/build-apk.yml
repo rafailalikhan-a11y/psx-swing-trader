@@ -19,6 +19,9 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Clean gradle.properties
+        run: sed -i '/org.gradle.java.home/d' android/gradle.properties
+
       - name: Install dependencies
         run: flutter pub get
 
