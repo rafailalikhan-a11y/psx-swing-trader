@@ -24,8 +24,10 @@ jobs:
 
       - name: Install dependencies
         run: |
+          flutter clean
           rm -f pubspec.lock
           flutter pub get
+
 
       - name: Build release APK
         run: flutter build apk --release
