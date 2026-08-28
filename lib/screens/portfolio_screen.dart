@@ -122,9 +122,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   String _compactRs(double value) {
     final sign = value < 0 ? '-' : '';
     final abs = value.abs();
-    if (abs >= 1000000) return '$signRs ${(abs / 1000000).toStringAsFixed(2)}M';
-    if (abs >= 1000) return '$signRs ${(abs / 1000).toStringAsFixed(1)}K';
-    return '$signRs ${_fmt.format(abs)}';
+    if (abs >= 1000000) return '${sign}Rs ${(abs / 1000000).toStringAsFixed(2)}M';
+    if (abs >= 1000) return '${sign}Rs ${(abs / 1000).toStringAsFixed(1)}K';
+    return '${sign}Rs ${_fmt.format(abs)}';
   }
 
   void _snack(String msg) =>
