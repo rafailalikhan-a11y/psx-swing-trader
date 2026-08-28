@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'screens/portfolio_screen.dart';
 import 'screens/signals_screen.dart';
 import 'screens/watchlist_screen.dart';
+import 'services/notification_service.dart';
 
-void main() => runApp(const PsxSwingApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.init();
+  runApp(const PsxSwingApp());
+}
 
 class PsxSwingApp extends StatelessWidget {
   const PsxSwingApp({super.key});
