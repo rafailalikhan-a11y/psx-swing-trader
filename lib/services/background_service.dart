@@ -20,12 +20,10 @@ class BackgroundService {
   }
 
   static Future<void> enable({int intervalMin = 15}) async {
-    await init();
-    await Workmanager().registerPeriodicTask(
+         await Workmanager().registerPeriodicTask(
       taskName, taskName,
       frequency: Duration(minutes: intervalMin < 15 ? 15 : intervalMin),
       constraints: Constraints(networkType: NetworkType.connected),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
     );
   }
 
