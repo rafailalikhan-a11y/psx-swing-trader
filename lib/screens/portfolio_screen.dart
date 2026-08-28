@@ -4,6 +4,9 @@ import '../models/models.dart';
 import '../services/storage.dart';
 import '../services/csv_importer.dart';
 import '../services/psx_api.dart';
+import 'settings_screen.dart';
+
+enum PortfolioSort { symbolAZ, totalPnl, dailyPnl, invested }
 
 class PortfolioScreen extends StatefulWidget {
   const PortfolioScreen({super.key});
@@ -14,7 +17,9 @@ class PortfolioScreen extends StatefulWidget {
 class _PortfolioScreenState extends State<PortfolioScreen> {
   List<Holding> _holdings = [];
   final Map<String, double> _livePrices = {};
+  final Map<String, double> _prevClose = {};
   bool _loadingPrices = false;
+  PortfolioSort _sort = PortfolioSort.symbolAZ;
   final _fmt = NumberFormat('#,##0.00');
 
   @override
@@ -44,9 +49,31 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         merged[sym] = Holding(symbol: sym, shares: h.shares, avgPrice: h.avgPrice);
       }
     }
-    final out = merged.values.toList()
-      ..sort((a, b) => a.symbol.compareTo(b.symbol));
+    final out = merged.values.toList();
+    _applySort(out);
     return out;
+  }
+
+  double _totalPnl(Holding h) => h.shares * ((_livePrices[h.symbol] ?? h.avgPrice) - h.avgPrice);
+
+  double _dailyPnl(Holding h) {
+    final live = _livePrices[h.symbol];
+    final prev = _prevClose[h.symbol];
+    if (live == null || prev == null) return 0;
+    return h.shares * (live - prev);
+  }
+
+  void _applySort(List<Holding> list) {
+    switch (_sort) {
+      case PortfolioSort.symbolAZ:
+        list.sort((a, b) => a.symbol.compareTo(b.symbol));
+      case PortfolioSort.totalPnl:
+        list.sort((a, b) => _totalPnl(b).compareTo(_totalPnl(a)));
+      case PortfolioSort.dailyPnl:
+        list.sort((a, b) => _dailyPnl(b).compareTo(_dailyPnl(a)));
+      case PortfolioSort.invested:
+        list.sort((a, b) => (b.shares * b.avgPrice).compareTo(a.shares * a.avgPrice));
+    }
   }
 
   Future<void> _refreshPrices() async {
@@ -54,11 +81,17 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     for (final h in _holdings) {
       try {
         final candles = await PsxApi.fetchHistory(h.symbol);
-        if (candles.isNotEmpty) _livePrices[h.symbol] = candles.last.close;
+        if (candles.isNotEmpty) {
+          _livePrices[h.symbol] = candles.last.close;
+          if (candles.length >= 2) _prevClose[h.symbol] = candles[candles.length - 2].close;
+        }
       } catch (_) {}
       if (mounted) setState(() {});
     }
-    if (mounted) setState(() => _loadingPrices = false);
+    if (mounted) setState(() {
+      _loadingPrices = false;
+      _applySort(_holdings);
+    });
   }
 
   Future<void> _importCsv() async {
@@ -106,7 +139,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
           final totalCost = (existing.shares * existing.avgPrice) + (sh * pr);
           existing.shares = totalShares;
           existing.avgPrice = totalCost / totalShares;
-          _snack('$sym updated and averaged into existing holding');
+          _snack('$sym merged — new avg Rs ${existing.avgPrice.toStringAsFixed(2)} × ${existing.shares.toStringAsFixed(0)} shares');
         } else {
           _holdings.add(Holding(symbol: sym, shares: sh, avgPrice: pr));
           _snack('$sym added');
@@ -119,6 +152,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     }
   }
 
+  /// Compact formatting for totals only (K/M). Share prices and quantities
+  /// keep full numbers as requested.
   String _compactRs(double value) {
     final sign = value < 0 ? '-' : '';
     final abs = value.abs();
@@ -148,8 +183,28 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
             const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)))
           else
             IconButton(icon: const Icon(Icons.refresh), onPressed: _holdings.isEmpty ? null : _refreshPrices),
+          PopupMenuButton<PortfolioSort>(
+            icon: const Icon(Icons.sort),
+            tooltip: 'Sort holdings',
+            initialValue: _sort,
+            onSelected: (s) => setState(() {
+              _sort = s;
+              _applySort(_holdings);
+            }),
+            itemBuilder: (ctx) => const [
+              PopupMenuItem(value: PortfolioSort.symbolAZ, child: Text('Symbol (A–Z)')),
+              PopupMenuItem(value: PortfolioSort.totalPnl, child: Text('Total P&L (high → low)')),
+              PopupMenuItem(value: PortfolioSort.dailyPnl, child: Text('Daily P&L (high → low)')),
+              PopupMenuItem(value: PortfolioSort.invested, child: Text('Invested amount (high → low)')),
+            ],
+          ),
           IconButton(icon: const Icon(Icons.upload_file), tooltip: 'Import CSV', onPressed: _importCsv),
           IconButton(icon: const Icon(Icons.add), onPressed: _addManual),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
+          ),
         ],
       ),
       body: _holdings.isEmpty
