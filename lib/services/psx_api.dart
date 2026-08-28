@@ -2,11 +2,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/models.dart';
 
-/// Free unofficial PSX data layer.
-/// Primary: psxterminal.com (PSX Terminal API). Fallback: dps.psx.com.pk chart data.
+/// PSX official public data feed (dps.psx.com.pk) — the same feed that powers
+/// the charts on PSX's own website. No API key required.
 class PsxApi {
-  static const _base = 'https://psxterminal.com/api';
-  static const _psxCharts = 'https://dps.psx.com.pk/charts';
+  static const _base = 'https://dps.psx.com.pk';
 
   static final _client = http.Client();
   static List<String>? _symbolCache;
@@ -15,50 +14,55 @@ class PsxApi {
   static Future<List<String>> fetchSymbols() async {
     if (_symbolCache != null) return _symbolCache!;
     final r = await _client.get(Uri.parse('$_base/symbols')).timeout(const Duration(seconds: 25));
-    final body = jsonDecode(r.body);
-    final List data = body['data'];
-    _symbolCache = data.map((e) => e.toString()).toList();
+    final List body = jsonDecode(r.body);
+    _symbolCache = body
+        .where((e) => e is Map && e['isDebt'] != true && e['isETF'] != true)
+        .map((e) => e['symbol'].toString())
+        .toList();
     return _symbolCache!;
   }
 
-  /// Fetch ~120 days of daily OHLCV candles for a symbol.
-  /// Tries psxterminal klines first, falls back to PSX public chart endpoint.
+  /// Fetch daily OHLCV candles for a symbol.
+  /// Primary: end-of-day history. Fallback: today's intraday ticks.
   static Future<List<Candle>> fetchHistory(String symbol) async {
-    // Attempt 1: psxterminal klines
+    // Attempt 1: end-of-day history
     try {
       final r = await _client
-          .get(Uri.parse('$_base/klines/$symbol/1d'))
+          .get(Uri.parse('$_base/timeseries/eod/$symbol'))
           .timeout(const Duration(seconds: 20));
       final body = jsonDecode(r.body);
-      if (body['success'] == true && body['data'] is List && (body['data'] as List).isNotEmpty) {
-        return _parseKlines(body['data']);
+      if (body is Map && body['status'] == 1 && body['data'] is List && (body['data'] as List).isNotEmpty) {
+        return _parseEod(body['data']);
       }
     } catch (_) {}
-    // Attempt 2: PSX chart endpoint (timeseries)
+    // Attempt 2: intraday ticks (today's session)
     try {
       final r = await _client
-          .get(Uri.parse('$_psxCharts/timeseries/eod/$symbol'))
+          .get(Uri.parse('$_base/timeseries/int/$symbol'))
           .timeout(const Duration(seconds: 20));
       final body = jsonDecode(r.body);
-      if (body is List && body.isNotEmpty) return _parsePsxTimeseries(body);
-      if (body is Map && body['data'] is List) return _parsePsxTimeseries(body['data']);
+      if (body is Map && body['status'] == 1 && body['data'] is List && (body['data'] as List).isNotEmpty) {
+        return _parseIntraday(body['data']);
+      }
     } catch (_) {}
     return [];
   }
 
-  static List<Candle> _parseKlines(List data) {
+  /// EOD format: [timestamp_seconds, close, volume, open]
+  static List<Candle> _parseEod(List data) {
     final out = <Candle>[];
-    for (final k in data) {
+    for (final row in data) {
       try {
-        // klines format: [timestamp, open, high, low, close, volume]
-        if (k is List && k.length >= 6) {
+        if (row is List && row.length >= 3) {
+          final ts = row[0] is int ? row[0] : int.parse(row[0].toString());
+          final close = double.parse(row[1].toString());
+          final vol = double.parse(row[2].toString());
+          final open = row.length >= 4 ? double.parse(row[3].toString()) : close;
           out.add(Candle(
-            date: DateTime.fromMillisecondsSinceEpoch((k[0] is int ? k[0] : int.parse(k[0].toString())) * (k[0] < 10000000000 ? 1000 : 1)),
-            open: double.parse(k[1].toString()),
-            high: double.parse(k[2].toString()),
-            low: double.parse(k[3].toString()),
-            close: double.parse(k[4].toString()),
-            volume: double.parse(k[5].toString()),
+            date: DateTime.fromMillisecondsSinceEpoch(ts * 1000),
+            open: open, high: close > open ? close : open,
+            low: close < open ? close : open,
+            close: close, volume: vol,
           ));
         }
       } catch (_) {}
@@ -67,16 +71,17 @@ class PsxApi {
     return out;
   }
 
-  static List<Candle> _parsePsxTimeseries(List data) {
+  /// Intraday format: [timestamp_seconds, price, volume]
+  static List<Candle> _parseIntraday(List data) {
     final out = <Candle>[];
     for (final row in data) {
       try {
         if (row is List && row.length >= 3) {
           final ts = row[0] is int ? row[0] : int.parse(row[0].toString());
           final price = double.parse(row[1].toString());
-          final vol = row.length >= 3 ? double.parse(row[2].toString()) : 0.0;
+          final vol = double.parse(row[2].toString());
           out.add(Candle(
-            date: DateTime.fromMillisecondsSinceEpoch(ts * (ts < 10000000000 ? 1000 : 1)),
+            date: DateTime.fromMillisecondsSinceEpoch(ts * 1000),
             open: price, high: price, low: price, close: price, volume: vol,
           ));
         }
