@@ -19,15 +19,16 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Clean gradle.properties
-        run: sed -i '/org.gradle.java.home/d' android/gradle.properties
+      - name: Clean gradle.properties and stale generated files
+        run: |
+          sed -i '/org.gradle.java.home/d' android/gradle.properties
+          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 
       - name: Install dependencies
         run: |
           flutter clean
           rm -f pubspec.lock
           flutter pub get
-
 
       - name: Build release APK
         run: flutter build apk --release
@@ -37,3 +38,4 @@ jobs:
         with:
           name: PSX-Swing-Trader-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
