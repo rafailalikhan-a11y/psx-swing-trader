@@ -24,9 +24,29 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   }
 
   Future<void> _load() async {
-    final h = await Storage.loadHoldings();
+    final h = _mergeAndSort(await Storage.loadHoldings());
     setState(() => _holdings = h);
     if (h.isNotEmpty) _refreshPrices();
+  }
+
+  List<Holding> _mergeAndSort(List<Holding> items) {
+    final Map<String, Holding> merged = {};
+    for (final h in items) {
+      final sym = h.symbol.trim().toUpperCase();
+      if (sym.isEmpty) continue;
+      if (merged.containsKey(sym)) {
+        final existing = merged[sym]!;
+        final totalShares = existing.shares + h.shares;
+        final totalCost = (existing.shares * existing.avgPrice) + (h.shares * h.avgPrice);
+        existing.shares = totalShares;
+        existing.avgPrice = totalShares > 0 ? totalCost / totalShares : h.avgPrice;
+      } else {
+        merged[sym] = Holding(symbol: sym, shares: h.shares, avgPrice: h.avgPrice);
+      }
+    }
+    final out = merged.values.toList()
+      ..sort((a, b) => a.symbol.compareTo(b.symbol));
+    return out;
   }
 
   Future<void> _refreshPrices() async {
@@ -48,9 +68,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       _snack('No valid rows found. Use columns: symbol, shares, avg_price');
       return;
     }
-    setState(() => _holdings = imported);
-    await Storage.saveHoldings(imported);
-    _snack('Imported ${imported.length} holdings');
+    final merged = _mergeAndSort(imported);
+    setState(() => _holdings = merged);
+    await Storage.saveHoldings(merged);
+    _snack('Imported ${merged.length} holdings');
     _refreshPrices();
   }
 
@@ -77,12 +98,33 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       final sym = symCtrl.text.trim().toUpperCase();
       final sh = double.tryParse(sharesCtrl.text);
       final pr = double.tryParse(priceCtrl.text);
-      if (sym.isNotEmpty && sh != null && pr != null) {
-        setState(() => _holdings.add(Holding(symbol: sym, shares: sh, avgPrice: pr)));
-        await Storage.saveHoldings(_holdings);
+      if (sym.isNotEmpty && sh != null && pr != null && sh > 0 && pr > 0) {
+        final existingIdx = _holdings.indexWhere((h) => h.symbol == sym);
+        if (existingIdx != -1) {
+          final existing = _holdings[existingIdx];
+          final totalShares = existing.shares + sh;
+          final totalCost = (existing.shares * existing.avgPrice) + (sh * pr);
+          existing.shares = totalShares;
+          existing.avgPrice = totalCost / totalShares;
+          _snack('$sym updated and averaged into existing holding');
+        } else {
+          _holdings.add(Holding(symbol: sym, shares: sh, avgPrice: pr));
+          _snack('$sym added');
+        }
+        final merged = _mergeAndSort(_holdings);
+        setState(() => _holdings = merged);
+        await Storage.saveHoldings(merged);
         _refreshPrices();
       }
     }
+  }
+
+  String _compactRs(double value) {
+    final sign = value < 0 ? '-' : '';
+    final abs = value.abs();
+    if (abs >= 1000000) return '$signRs ${(abs / 1000000).toStringAsFixed(2)}M';
+    if (abs >= 1000) return '$signRs ${(abs / 1000).toStringAsFixed(1)}K';
+    return '$signRs ${_fmt.format(abs)}';
   }
 
   void _snack(String msg) =>
@@ -159,10 +201,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       margin: const EdgeInsets.all(12),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-          _stat('Invested', 'Rs ${_fmt.format(cost)}', Colors.white70),
-          _stat('Current', 'Rs ${_fmt.format(value)}', Colors.white),
-          _stat('P&L', '${pnl >= 0 ? '+' : ''}${_fmt.format(pnl)} (${pnlPct.toStringAsFixed(1)}%)', color),
+        child: Row(children: [
+          Expanded(child: _stat('Invested', _compactRs(cost), Colors.white70)),
+          Expanded(child: _stat('Current', _compactRs(value), Colors.white)),
+          Expanded(child: _stat('P&L', '${pnl >= 0 ? '+' : ''}${_compactRs(pnl)}\n(${pnlPct.toStringAsFixed(1)}%)', color)),
         ]),
       ),
     );
@@ -172,7 +214,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       Column(children: [
         Text(label, style: const TextStyle(fontSize: 12, color: Colors.white54)),
         const SizedBox(height: 4),
-        Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(value, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 16)),
+        ),
       ]);
 
   Widget _emptyState() => Center(
