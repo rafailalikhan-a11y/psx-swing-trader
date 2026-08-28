@@ -21,17 +21,19 @@ class _SignalsScreenState extends State<SignalsScreen> {
       _scanning = true;
       _signals = [];
       _scanned = 0;
-      _status = 'Loading watchlist…';
+      _status = 'Loading portfolio + watchlist…';
     });
 
-    // Scan watchlist symbols + portfolio symbols (keeps scan fast & relevant)
+    // Current design: scan watchlist symbols + portfolio symbols.
+    // Whole-market scanning is a later enhancement because each symbol currently
+    // requires a separate network call and would be too slow on-device.
     final watch = await Storage.loadWatchlist();
     final holdings = (await Storage.loadHoldings()).map((h) => h.symbol).toList();
-    final symbols = {...watch, ...holdings}.toList();
+    final symbols = {...watch.map((e) => e.toUpperCase()), ...holdings.map((e) => e.toUpperCase())}.toList()..sort();
 
     setState(() {
       _total = symbols.length;
-      _status = 'Fetching market data…';
+      _status = 'Fetching signal data from portfolio + watchlist…';
     });
 
     final found = <Signal>[];
@@ -49,8 +51,8 @@ class _SignalsScreenState extends State<SignalsScreen> {
       _signals = top;
       _scanning = false;
       _status = top.isEmpty
-          ? 'No high-volume swing signals today across ${symbols.length} symbols.\nLow-volume / range-bound market — better to wait.'
-          : 'Top ${top.length} signal(s) for today • scanned ${symbols.length} symbols';
+          ? 'No high-volume swing signals today across ${symbols.length} portfolio/watchlist symbols.'
+          : 'Top ${top.length} signal(s) today • scanned ${symbols.length} portfolio/watchlist symbols';
     });
   }
 
@@ -102,6 +104,8 @@ class _SignalsScreenState extends State<SignalsScreen> {
             const SizedBox(height: 6),
             _rule(Icons.trending_down, 'SELL', Colors.redAccent,
                 'Volume ≥ 2× 20-day avg + RSI 30–50 + price below MA20 + breakdown below 20-day low'),
+            const SizedBox(height: 8),
+            const Text('Current scope: scans your portfolio + watchlist symbols only.', style: TextStyle(fontSize: 11, color: Colors.white54)),
           ]),
         ),
       );
