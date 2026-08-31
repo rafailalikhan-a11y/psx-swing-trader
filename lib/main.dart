@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'screens/portfolio_screen.dart';
 import 'screens/signals_screen.dart';
@@ -6,7 +7,9 @@ import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService.init();
+  if (!kIsWeb) {
+    await NotificationService.init();
+  }
   runApp(const PsxSwingApp());
 }
 
