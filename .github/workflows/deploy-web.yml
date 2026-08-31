@@ -24,6 +24,9 @@ jobs:
           rm -f pubspec.lock
           flutter pub get
 
+      - name: Add web platform support
+        run: flutter create . --platforms web
+
       - name: Build web app
         run: flutter build web --release --base-href /psx-swing-trader/
 
