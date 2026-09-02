@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../services/storage.dart';
 import '../services/csv_importer.dart';
 import '../services/psx_api.dart';
+import '../services/market_data.dart';
 import 'settings_screen.dart';
 
 enum PortfolioSort { symbolAZ, totalPnl, dailyPnl, invested }
@@ -76,8 +77,33 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     }
   }
 
+  /// Price refresh strategy:
+  /// 1) Try the collector's quotes.json — one fetch prices the whole portfolio.
+  /// 2) Fallback: per-symbol direct fetch (slower, used when collector data
+  ///    is stale or unavailable, e.g. collector paused outside market hours).
   Future<void> _refreshPrices() async {
     setState(() => _loadingPrices = true);
+
+    final quotes = await MarketData.fetchQuotes();
+    if (quotes != null) {
+      var any = false;
+      for (final h in _holdings) {
+        final q = quotes[h.symbol];
+        if (q != null) {
+          _livePrices[h.symbol] = (q['price'] as num).toDouble();
+          _prevClose[h.symbol] = (q['prevClose'] as num).toDouble();
+          any = true;
+        }
+      }
+      if (any && mounted) {
+        setState(() {
+          _loadingPrices = false;
+          _applySort(_holdings);
+        });
+        return;
+      }
+    }
+
     for (final h in _holdings) {
       try {
         final candles = await PsxApi.fetchHistory(h.symbol);
