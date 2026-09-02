@@ -30,6 +30,11 @@ jobs:
       - name: Build web app
         run: flutter build web --release --base-href /psx-swing-trader/
 
+      - name: Include market data in the web build
+        run: |
+          mkdir -p build/web/data
+          cp -r data/* build/web/data/ 2>/dev/null || echo "no data yet"
+
       - name: Upload web build
         uses: actions/upload-pages-artifact@v3
         with:
